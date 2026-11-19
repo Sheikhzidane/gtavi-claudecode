@@ -30,7 +30,7 @@ def sha256(path):
 
 def clips_today():
     t0 = time.mktime(time.strptime(time.strftime("%Y-%m-%d"), "%Y-%m-%d"))
-    return one("SELECT COUNT(*) n FROM clips WHERE created_at>=? AND status!='rejected'", t0)["n"]
+    return one("SELECT COUNT(*) n FROM clips WHERE created_at>=? AND status NOT IN ('rejected','test')", t0)["n"]
 
 
 def voice_hook(text, out, voice):
@@ -82,6 +82,30 @@ def job_from_output(out):
     return Path(m.group(1).strip()) if m else None
 
 
+COOLDOWN = ROOT / "data" / "youtube_cooldown"
+
+
+def youtube_blocked():
+    return COOLDOWN.exists() and time.time() - COOLDOWN.stat().st_mtime < 2 * 3600
+
+
+def licence_of(url):
+    """Licence string of a YouTube video: official Data API first, public page as fallback. None = unknown."""
+    m = re.search(r"(?:v=|youtu\.be/|shorts/)([\w-]{11})", url)
+    from . import tokens
+    if m and tokens.get("youtube"):
+        try:
+            from .publishers import youtube as Y
+            return (Y.api_videos([m.group(1)]).get(m.group(1)) or {}).get("license") or ""
+        except Exception as e:
+            log("render", f"licence lookup via API failed: {str(e)[:100]}", "warn")
+    from common import ytdlp_json
+    try:
+        return (ytdlp_json(url, ["--skip-download"]) or {}).get("license") or ""
+    except BaseException:
+        return None
+
+
 def process(src, creator, source_platform, display=None, max_clips=None, layouts=("react", "blur"), clip_max=None):
     cfg = config.load()
     if clip_max:
@@ -93,8 +117,19 @@ def process(src, creator, source_platform, display=None, max_clips=None, layouts
     budget = (max_clips or cfg["daily_clip_limit"]) - clips_today() if max_clips is None else max_clips
     if budget <= 0:
         log("render", "daily clip limit reached"); return []
+    if (rr.get("source_rule") or "").startswith("cc-by"):  # creator cleared only for CC BY videos: check this one
+        lic = licence_of(src)
+        if lic is None:
+            log("render", f"skipped {src}: could not read its licence right now (will retry)", "warn"); return None
+        if "Creative Commons" not in lic:
+            log("render", f"refused {src}: video is not CC BY licensed ({lic or 'no licence'})", "warn"); return []
+        rr = dict(rr, licence="CC BY")
     code, out = _run([SCRIPTS / "moments.py", src, "--fresh", "--top", 8, "--min", cfg["clip_min"], "--max", cfg["clip_max"]], timeout=7200)
     job = job_from_output(out)
+    if "not a bot" in out:  # YouTube bot check: back off; never work around it with cookies
+        COOLDOWN.write_text(time.strftime("%Y-%m-%d %H:%M"))
+        log("render", "YouTube asked for a bot check: pausing YouTube downloads for 2 h (no cookies, no bypass)", "warn")
+        return None
     if code != 0 or not job:
         log("render", f"moments failed for {src}: {out[-400:]}", "error"); return []
     cands = json.loads((job / "candidates.json").read_text(encoding="utf-8"))
@@ -109,7 +144,7 @@ def process(src, creator, source_platform, display=None, max_clips=None, layouts
         if one("SELECT id FROM clips WHERE source_url=? AND ABS(start-?)<5", src_url or str(src), cand["start"]):
             continue  # duplicate moment
         seed = f"{src}:{cand['start']}"
-        pkg = content.write(cand["text"], display, src_url, rr, cfg["brand"], seed)
+        pkg = content.write(cand["text"], display, src_url, rr, cfg["brand"], seed, source_title=info.get("title"))
         day = time.strftime("%Y-%m-%d")
         d = OUT / day / re.sub(r"[^\w-]+", "_", rights.norm(creator)) / pkg["category"]
         d.mkdir(parents=True, exist_ok=True)
@@ -151,4 +186,33 @@ def process(src, creator, source_platform, display=None, max_clips=None, layouts
             "info" if okv else "warn")
         if okv:
             made.append(cid)
+    return made
+
+
+def produce(n=3, per_creator=2):
+    """Render the best licensed scout opportunities into finished clips (respects the daily limit)."""
+    from . import scout
+    cfg = config.load()
+    made, per = [], {}
+    for o in scout.opportunities(30):
+        if clips_today() >= cfg["daily_clip_limit"] or len(made) >= n or config.stopped():
+            break
+        if per.get(o["creator"], 0) >= per_creator:
+            continue
+        lic = licence_of(o["url"])
+        if lic is None:
+            continue
+        if "Creative Commons" not in lic:
+            execute("UPDATE scout_opportunities SET status='no_license', reason='licence re-check: not CC' WHERE url=?", o["url"]); continue
+        if not rights.is_cleared(o["creator"], "youtube")[0]:
+            rights.clear(o["creator"], "youtube", "license", o["url"], "auto: CC BY licence verified on the video",
+                         source_rule="cc-by-only", evidence_note="Creative Commons Attribution licence (reuse allowed) on the source video")
+        if youtube_blocked():
+            log("render", "YouTube downloads paused after a bot check; resuming automatically later"); break
+        ids = process(o["url"], o["creator"], "youtube", display=o["display"], max_clips=1)
+        if ids is None:  # temporary problem (bot check, licence unreadable): retry next cycle
+            continue
+        execute("UPDATE scout_opportunities SET rendered=? WHERE url=?", time.time(), o["url"])
+        if ids:
+            made += ids; per[o["creator"]] = per.get(o["creator"], 0) + 1
     return made

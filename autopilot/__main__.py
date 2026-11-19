@@ -160,14 +160,23 @@ def cmd_tick(a):
         log("tick", "previous cycle still running, skipping"); return
     LOCK.write_text(str(os.getpid()))
     try:
-        from . import discover, render, publish, analytics
+        from . import scout, render, publish, analytics
         cfg = config.load()
         _ingest_drop_folder()
-        _, cleared = discover.run()
-        for d in cleared[:2]:
+        # 1. discover + rank (Twitch every cycle; YouTube API every 4 h to keep quota for uploads)
+        yt_mark = DATA / "scout_youtube_last"
+        do_yt = not yt_mark.exists() or time.time() - yt_mark.stat().st_mtime > 4 * 3600
+        scout.run(youtube=do_yt)
+        if do_yt:
+            yt_mark.write_text(time.strftime("%Y-%m-%d %H:%M"))
+        # 2. licensed footage -> finished clips (daily limit, licence re-checked per video)
+        render.produce(cfg["daily_clip_limit"])
+        # 3. creators the owner cleared (campaigns / written permission) who are live now -> record and cut
+        for d in rows("SELECT sc.platform, sc.creator, sc.url FROM scout_creators sc JOIN rights r ON r.creator=sc.creator "
+                      "AND r.source_platform=sc.platform WHERE r.status='cleared' AND COALESCE(r.source_rule,'')='' "
+                      "AND sc.live_viewers>0 AND sc.updated>? ORDER BY sc.score DESC LIMIT 1", time.time() - 7200):
             if render.clips_today() >= cfg["daily_clip_limit"] or config.stopped():
                 break
-            execute("UPDATE discoveries SET processed_at=? WHERE url=?", time.time(), d["url"])
             _live_capture(d, cfg.get("live_minutes", 30))
         for r in publish.due(cfg):
             log("tick", f"publish result {r}")

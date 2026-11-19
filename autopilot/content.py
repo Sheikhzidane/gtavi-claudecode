@@ -43,10 +43,22 @@ def pick(options, seed):
     return options[int(hashlib.sha1(seed.encode()).hexdigest(), 16) % len(options)]
 
 
-def write(transcript_text, creator_display, source_url, rights_row, brand, seed):
-    cat, hooks, outros = classify(transcript_text)
-    hook, outro = pick(hooks, seed), pick(outros, seed + "o")
+def topic_hook(title):
+    """Hook from the source video's own topic, so it never claims something the clip doesn't show."""
+    t = re.sub(r"(?i)^\s*(gta\s*(6|vi)|grand theft auto\s*(6|vi))\s*[-:|–]\s*", "", title or "").strip()
+    t = re.sub(r"\s*[|(\[].*$", "", t).strip(" -!?.")  # drop trailing "(PS5)", "| part 2" and so on
+    if not t or len(t) < 8:
+        return None
+    t = t if len(t) <= 58 else t[:55].rsplit(" ", 1)[0] + "..."
+    return t + ("?" if re.match(r"(?i)(what|how|why|can|did|is|should) ", t) else "")
+
+
+def write(transcript_text, creator_display, source_url, rights_row, brand, seed, source_title=None):
+    cat, hooks, outros = classify(f"{transcript_text} {source_title or ''}")
+    hook, outro = topic_hook(source_title) or pick(hooks, seed), pick(outros, seed + "o")
     credit = f"Credit: {creator_display}" + (f" ({source_url})" if source_url else "")
+    if (rights_row or {}).get("licence"):  # CC BY attribution: creator, link, licence
+        credit += f" · Licensed {rights_row['licence']}, clip edited by GTA Viral Clips"
     req_tags = (rights_row or {}).get("required_tags") or []
     mention = (rights_row or {}).get("required_mention") or ""
     ad = "#ad " if (rights_row or {}).get("ad_label") else ""

@@ -125,3 +125,70 @@ def stats(remote_ids):
     except Exception:
         pass
     return out
+
+
+def _iso_dur(d):
+    import re as _re
+    m = _re.match(r"P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", d or "")
+    if not m:
+        return 0
+    dd, h, mi, sec = (int(x or 0) for x in m.groups())
+    return dd * 86400 + h * 3600 + mi * 60 + sec
+
+
+def api_videos(ids):
+    """Official metadata incl. licence, up to 50 ids per call (1 quota unit per call)."""
+    out = {}
+    for i in range(0, len(ids), 50):
+        r = _svc().videos().list(part="snippet,status,statistics,contentDetails", id=",".join(ids[i:i + 50])).execute()
+        for it in r.get("items", []):
+            sn, st = it["snippet"], it["status"]
+            out[it["id"]] = {"id": it["id"], "title": sn.get("title"), "description": sn.get("description") or "",
+                             "channel": sn.get("channelTitle"), "channel_id": sn.get("channelId"),
+                             "license": ("Creative Commons Attribution license (reuse allowed)" if st.get("license") == "creativeCommon"
+                                         else "Standard YouTube License"),
+                             "views": int(it.get("statistics", {}).get("viewCount", 0)),
+                             "duration": _iso_dur(it.get("contentDetails", {}).get("duration")),
+                             "published": sn.get("publishedAt"), "live": sn.get("liveBroadcastContent")}
+    return out
+
+
+def api_channels(ids):
+    out = {}
+    for i in range(0, len(ids), 50):
+        r = _svc().channels().list(part="statistics", id=",".join(ids[i:i + 50])).execute()
+        for it in r.get("items", []):
+            out[it["id"]] = int(it.get("statistics", {}).get("subscriberCount", 0) or 0)
+    return out
+
+
+def api_search_cc(q, n=25, days=14):
+    """YouTube search restricted to Creative Commons videos (100 quota units per call)."""
+    import datetime as _dt
+    after = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    r = _svc().search().list(part="id", q=q, type="video", videoLicense="creativeCommon", order="viewCount",
+                             publishedAfter=after, maxResults=min(50, n)).execute()
+    return [it["id"]["videoId"] for it in r.get("items", [])]
+
+
+
+def api_search(q, n=25, event=None, order="viewCount", hours=48):
+    """Plain YouTube search (100 quota units). event='live' for live streams."""
+    import datetime as _dt
+    kw = dict(part="id", q=q, type="video", order=order, maxResults=min(50, n))
+    if event:
+        kw["eventType"] = event
+    else:
+        kw["publishedAfter"] = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return [it["id"]["videoId"] for it in _svc().search().list(**kw).execute().get("items", [])]
+
+
+def api_live_viewers(ids):
+    out = {}
+    for i in range(0, len(ids), 50):
+        r = _svc().videos().list(part="liveStreamingDetails", id=",".join(ids[i:i + 50])).execute()
+        for it in r.get("items", []):
+            v = (it.get("liveStreamingDetails") or {}).get("concurrentViewers")
+            if v:
+                out[it["id"]] = int(v)
+    return out
