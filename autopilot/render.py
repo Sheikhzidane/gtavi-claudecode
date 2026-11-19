@@ -159,6 +159,9 @@ def process(src, creator, source_platform, display=None, max_clips=None, layouts
                 args += ["--title", pkg["hook"], "--title-secs", 3]
             if voice:
                 args += ["--voice", voice]
+            ov = (rr.get("source_rule") or "")
+            if ov.startswith("overlay:"):
+                args += ["--overlay", str(ROOT / ov.split(":", 1)[1])]
             code, cout = _run(args)
             if code == 0 and mp4.exists():
                 done = True; pkg["layout"] = lay; break

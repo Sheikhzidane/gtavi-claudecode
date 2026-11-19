@@ -173,7 +173,7 @@ def cmd_tick(a):
         render.produce(cfg["daily_clip_limit"])
         # 3. creators the owner cleared (campaigns / written permission) who are live now -> record and cut
         for d in rows("SELECT sc.platform, sc.creator, sc.url FROM scout_creators sc JOIN rights r ON r.creator=sc.creator "
-                      "AND r.source_platform=sc.platform WHERE r.status='cleared' AND COALESCE(r.source_rule,'')='' "
+                      "AND r.source_platform=sc.platform WHERE r.status='cleared' AND COALESCE(r.source_rule,'') NOT LIKE 'cc-by%' "
                       "AND sc.live_viewers>0 AND sc.updated>? ORDER BY sc.score DESC LIMIT 1", time.time() - 7200):
             if render.clips_today() >= cfg["daily_clip_limit"] or config.stopped():
                 break

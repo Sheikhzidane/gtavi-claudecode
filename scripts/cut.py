@@ -210,6 +210,8 @@ def main():
     ap.add_argument("--hook", default="")
     ap.add_argument("--outro", default="", help="editorial line shown over the last 3 s")
     ap.add_argument("--voice", default="", help="audio file (voiced hook) mixed over the start, game audio ducked")
+    ap.add_argument("--overlay", default="", help="PNG logo burned in for the whole clip (campaign requirement)")
+    ap.add_argument("--overlay-width", type=int, default=420)
     ap.add_argument("--out", default="", help="output mp4 path (default jobs/<id>/edits/clip_<n>.mp4)")
     ap.add_argument("--allow-profanity", action="store_true", help="keep swear words in captions (slurs are always masked)")
     ap.add_argument("--cam", default="auto", help="auto (find the webcam) or x:y:w:h fractions")
@@ -291,8 +293,14 @@ def main():
         amap = ["-map", "[ao]"]
     else:
         amap = ["-map", "0:a?", "-af", norm]
+    vout = "[vo]"
+    if a.overlay:  # creator's required logo, visible for the whole clip (top centre)
+        k = len([x for x in inputs if x == "-i"])
+        inputs += ["-loop", "1", "-i", a.overlay]
+        v += f";[{k}:v]scale={a.overlay_width}:-2,format=rgba[ov];[vo][ov]overlay=(W-w)/2:24:shortest=1[vf]"
+        vout = "[vf]"
     run([tool("ffmpeg"), "-y", "-v", "error", *inputs,
-         "-filter_complex", v, "-map", "[vo]", *amap,
+         "-filter_complex", v, "-map", vout, *amap,
          "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k",
          "-ar", "48000", "-movflags", "+faststart", str(mp4)])
     info = c.get("info", {})
