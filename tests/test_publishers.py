@@ -12,7 +12,7 @@ from autopilot import db, config, tokens, publish  # noqa: E402
 from autopilot.publishers import tiktok, instagram, youtube  # noqa: E402
 
 TMP = Path(tempfile.mkdtemp())
-db.DB_PATH = TMP / "ops.db"; db.DATA = TMP; config.STOP = TMP / "STOP"; config.CFG = TMP / "config.json"
+db.DB_PATH = TMP / "ops.db"; db.DATA = TMP; publish.MANUAL = TMP / "manual"; config.STOP = TMP / "STOP"; config.CFG = TMP / "config.json"
 VID = TMP / "v.mp4"; VID.write_bytes(b"\0" * 2048)
 TOK = {"access_token": "SECRET-ACCESS-123456", "refresh_token": "r", "obtained_at": 9e12, "expires_in": 86400, "user_id": "17841"}
 APP = {"client_key": "k", "client_secret": "s", "client_id": "i", "redirect_uri": "https://localhost/cb"}
