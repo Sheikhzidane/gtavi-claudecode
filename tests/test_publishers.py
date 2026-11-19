@@ -107,7 +107,7 @@ class T(unittest.TestCase):
             publish.publish_clip(self.clip, "instagram", "public", config.load())
             self.assertEqual(publish.publish_clip(self.clip, "instagram", "public", config.load()), "duplicate")
 
-    def test_youtube_unaudited_lock_detected(self):
+    def test_youtube_visibility_mismatch_reported(self):
         svc = mock.MagicMock()
         svc.videos().list().execute.return_value = {"items": [{"status": {"uploadStatus": "processed", "privacyStatus": "private"}}]}
         with mock.patch.object(youtube, "_svc", return_value=svc), mock.patch("googleapiclient.http.MediaFileUpload"):

@@ -54,7 +54,7 @@ Check with `python -m autopilot accounts`, revoke with `python -m autopilot revo
 4. `python -m autopilot connect youtube` (a browser opens; pick the channel).
 5. `python -m autopilot test-upload youtube <clip_id>` uploads as **private** and verifies.
 
-Restriction: Google keeps every upload from an unaudited API project private, so even "public" posts stay private (the system reports this as `locked_private` and makes a manual package). Public auto-posting needs the free YouTube API compliance audit: https://support.google.com/youtube/contact/yt_api_form. Quota is 10,000 units a day, about 6 uploads.
+Visibility: since YouTube's 2 Nov 2026 API revision, uploads from unverified API projects are no longer forced to private, so no audit is needed. The code always sets `privacyStatus`: private for tests, public for production clips that passed the rights checks under Autopilot. Quota checked on project gtaviralclips: 10,000 queries/day, about 100 units per upload, 100 uploads/day, 100 search queries/day (the scout uses about 36).
 
 ### TikTok
 1. developers.tiktok.com → Manage apps → create app → add **Login Kit** and **Content Posting API** (turn on Direct Post) → scopes `user.info.basic, video.publish, video.upload, video.list`.

@@ -2,9 +2,12 @@
 
 Setup (free): Google Cloud project -> enable "YouTube Data API v3" -> OAuth client type "Desktop app"
 -> download JSON to data/secrets/youtube.json. Unverified apps work for the owner's own channel
-(add yourself as a test user on the consent screen). Videos uploaded by unverified API projects created
-after 2020-07-28 are locked to private until the project passes Google's API audit; we detect that.
-Quota: 10,000 units/day by default, an upload costs ~1,600 -> max ~6 uploads/day.
+(add yourself as a test user on the consent screen).
+Privacy: since the 2 Nov 2026 revision, uploads from unverified API projects are no longer restricted to
+private (the 2020 policy was reversed), so no audit is needed. We always set status.privacyStatus
+explicitly: "private" for tests, the configured value ("public") for production.
+Quota (project gtaviralclips, checked 19 Nov 2026): Queries/day 10,000; an upload costs ~100 units;
+Video Uploads/day 100; Search Queries/day 100 (search.list is the scarce one).
 """
 import json, time
 from .. import tokens
@@ -100,8 +103,9 @@ def verify(remote_id, want_privacy):
         if st.get("uploadStatus") in ("rejected", "failed"):
             return "failed", f"{st.get('uploadStatus')}: {st.get('rejectionReason') or st.get('failureReason')}"
         if st.get("uploadStatus") == "processed" or st.get("uploadStatus") == "uploaded":
-            if want_privacy != "private" and st.get("privacyStatus") == "private" and not st.get("publishAt"):
-                return "locked_private", "API project unaudited: Google keeps uploads private until audit"
+            if want_privacy != st.get("privacyStatus") and not st.get("publishAt"):
+                # asked for one visibility, YouTube reports another: report it as it is, never assume a cause
+                return "locked_private", f"requested {want_privacy}, YouTube reports {st.get('privacyStatus')}"
             return ("published" if st.get("privacyStatus") == "public" else "private_test"), st.get("privacyStatus")
         time.sleep(15)
     return "processing", "still processing"
