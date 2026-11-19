@@ -6,6 +6,7 @@ python -m autopilot discover                       live streams -> rights candid
 python -m autopilot rights list | clear | deny | revoke ...
 python -m autopilot render <url-or-file> --creator X --source-platform twitch|youtube|own
 python -m autopilot review list | approve <id...> | reject <id...>
+python -m autopilot set-app tiktok|instagram           type developer-app credentials into hidden prompts (OS keyring)
 python -m autopilot connect|revoke youtube|tiktok|instagram ; accounts
 python -m autopilot test-upload <platform> <clip_id>   non-public test (private / SELF_ONLY / unpublished container)
 python -m autopilot autopilot enable <platforms...> --i-approve-public-autopilot | disable
@@ -102,9 +103,9 @@ def cmd_autopilot(a):
     if not a.i_approve_public_autopilot:
         sys.exit("Refused: pass --i-approve-public-autopilot to confirm you authorise public automatic posting.")
     for p in a.platforms:
-        test = one("SELECT id FROM posts WHERE platform=? AND verified=1", p)
+        test = one("SELECT id FROM posts WHERE platform=? AND verified=1 AND COALESCE(method,'api')='api'", p)
         if not test:
-            sys.exit(f"Refused for {p}: no verified test upload yet. Run test-upload first.")
+            sys.exit(f"Refused for {p}: no verified API test upload yet (browser tests don't count). Run test-upload first.")
         execute("INSERT INTO approvals VALUES (?,?,?,?) ON CONFLICT(platform) DO UPDATE SET autopilot=1, approved_at=excluded.approved_at",
                 p, 1, time.strftime("%Y-%m-%d %H:%M"), "owner approved via CLI")
     cfg["mode"] = "autopilot"; config.save(cfg); log("autopilot", f"ENABLED for {a.platforms}")
@@ -140,6 +141,16 @@ def _live_capture(disc, minutes):
             for spike in sorted(ld.glob("spike_*.mp4")):
                 made += render.process(str(spike), disc["creator"], disc["platform"], max_clips=1)
     return made
+
+
+def cmd_browser_record(a):
+    """Record the verified outcome of a website post made in a Claude-in-Chrome session."""
+    p = one("SELECT * FROM posts WHERE id=?", a.post_id)
+    if a.status == "published" and not a.url:
+        sys.exit("a published post needs its verified --url")
+    execute("UPDATE posts SET status=?, url=?, verified=?, method='browser', error=?, updated_at=? WHERE id=?",
+            a.status, a.url or None, int(a.status != "failed"), a.note or None, time.time(), a.post_id)
+    log("publish", f"{p['platform']} clip {p['clip_id']} -> {a.status} via BROWSER {a.url} {a.note}")
 
 
 def cmd_tick(a):
@@ -211,6 +222,12 @@ def main():
                                                         __import__("autopilot.discover", fromlist=["x"]).top()])
     for name, f in (("connect", cmd_connect), ("revoke", cmd_revoke)):
         p = sp.add_parser(name); p.add_argument("platform", choices=["youtube", "tiktok", "instagram"]); p.set_defaults(f=f)
+    sp.add_parser("browser-queue").set_defaults(f=lambda a: print(json.dumps(__import__("autopilot.publish", fromlist=["x"]).browser_queue(), indent=1, ensure_ascii=False)))
+    p = sp.add_parser("browser-record"); p.add_argument("post_id", type=int); p.add_argument("status", choices=["published", "private_test", "failed"])
+    p.add_argument("--url", default=""); p.add_argument("--note", default="")
+    p.set_defaults(f=cmd_browser_record)
+    p = sp.add_parser("set-app"); p.add_argument("platform", choices=["youtube", "tiktok", "instagram"])
+    p.set_defaults(f=lambda a: print(tokens.set_app(a.platform)))
     p = sp.add_parser("rights"); p.add_argument("action", choices=["list", "clear", "deny", "revoke"])
     p.add_argument("creator", nargs="?"); p.add_argument("source_platform", nargs="?")
     p.add_argument("--basis"); p.add_argument("--evidence", default=""); p.add_argument("--by", default="owner")

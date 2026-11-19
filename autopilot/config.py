@@ -10,8 +10,12 @@ DEFAULTS = {
     "post_hours_local": [12, 17, 21], # preferred publish slots
     "platforms": ["youtube", "tiktok", "instagram"],
     "youtube_privacy": "public",      # used only in autopilot; tests always go private
-    "brand": {"name": "Vice Clips Daily", "handle": "@viceclipsdaily",
-              "tags": ["#GTA6", "#GTAVI", "#gaming", "#ViceCity"]},
+    "brand": {"name": "GTA Viral Clips", "handle": "@gtaviralclips",
+              "tags": ["#GTA6", "#GTAVI", "#GTAViralClips", "#gaming", "#ViceCity"]},
+    # publishing is refused unless the connected API account is exactly this one
+    "destinations": {"youtube": {"channel_id": "UCpxIZcZJwslLEJDD04JSkJQ", "handle": "@gtaviralclips6969"},
+                     "instagram": {"username": "gtaviralclips69"},
+                     "tiktok": {"username": "gta.viral.clips6"}},
     "clip_min": 15, "clip_max": 45,
     "voice_hook": True, "voice": "en-US-GuyNeural",
     "pause_on_errors": 3,             # consecutive publish failures on a platform -> pause that platform
@@ -24,7 +28,11 @@ def load():
     DATA.mkdir(exist_ok=True)
     cfg = dict(DEFAULTS)
     if CFG.exists():
-        cfg.update(json.loads(CFG.read_text(encoding="utf-8")))
+        saved = json.loads(CFG.read_text(encoding="utf-8"))
+        cfg.update(saved)
+        for k in ("brand", "destinations"):  # new default keys are merged in, saved values win
+            if k in saved and isinstance(DEFAULTS[k], dict):
+                cfg[k] = {**DEFAULTS[k], **saved[k]}
     else:
         save(cfg)
     return cfg

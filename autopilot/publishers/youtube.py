@@ -22,7 +22,11 @@ def _creds():
         raise PermissionError("youtube not connected: run `python -m autopilot connect youtube`")
     c = Credentials.from_authorized_user_info(t, SCOPES)
     if not c.valid and c.refresh_token:
-        c.refresh(Request())
+        from google.auth.exceptions import RefreshError
+        try:
+            c.refresh(Request())
+        except RefreshError as e:  # revoked, or 7-day expiry while the consent screen is in "Testing"
+            raise PermissionError(f"youtube re-authorisation needed ({str(e)[:80]}): run `python -m autopilot connect youtube`")
         tokens.put(PLAT, json.loads(c.to_json()))
     return c
 

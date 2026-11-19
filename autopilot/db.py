@@ -59,6 +59,11 @@ def conn():
     c = sqlite3.connect(DB_PATH, timeout=30)
     c.row_factory = sqlite3.Row
     c.executescript(SCHEMA)
+    for col in ("method TEXT DEFAULT 'api'",):  # migrations for older DBs
+        try:
+            c.execute(f"ALTER TABLE posts ADD COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass
     try:
         yield c
         c.commit()

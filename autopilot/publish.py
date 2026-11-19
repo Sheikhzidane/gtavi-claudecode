@@ -60,6 +60,25 @@ def _fail(clip_id, platform, privacy, err, cfg):
         log("safety", f"{platform} paused after {cfg['pause_on_errors']} consecutive failures", "error")
 
 
+_ACCOUNT_OK = {}
+
+
+def account_guard(platform, cfg):
+    """Raise unless the connected API account is the configured destination (checked once per process)."""
+    if platform in _ACCOUNT_OK:
+        return
+    want = cfg.get("destinations", {}).get(platform, {})
+    me = pub(platform).whoami()
+    if platform == "youtube":
+        ok = not want.get("channel_id") or me.get("id") == want["channel_id"]
+    else:
+        ok = not want.get("username") or (me.get("account") or "").lower() == want["username"].lower()
+    if not ok:
+        raise PermissionError(f"{platform} is connected to {me.get('account')} ({me.get('id')}), not the destination {want}. "
+                              f"Reconnect with the right account.")
+    _ACCOUNT_OK[platform] = me
+
+
 def publish_clip(clip, platform, privacy, cfg, test=False):
     """privacy: 'public' or 'private' (test). Returns post row status."""
     meta = json.loads(clip["meta"])
@@ -73,6 +92,7 @@ def publish_clip(clip, platform, privacy, cfg, test=False):
     _record(clip["id"], platform, privacy, status="uploading", account=(tokens.get(platform) or {}).get("user_id"))
     try:
         P = pub(platform)
+        account_guard(platform, cfg)
         if platform == "youtube":
             y = meta["youtube"]
             r = P.upload(clip["path"], y["title"], y["description"], y["tags"], privacy="private" if test else cfg["youtube_privacy"])
@@ -110,13 +130,45 @@ def publish_clip(clip, platform, privacy, cfg, test=False):
     return state
 
 
+BROWSER_MAX = 9_500_000  # Claude in Chrome file_upload accepts < 10 MB per call
+
+
+def browser_copy(src, dst):
+    """Copy for browser posting; re-encode to fit the upload tool's size limit when needed."""
+    import os, subprocess, sys
+    if os.path.getsize(src) <= BROWSER_MAX:
+        shutil.copy2(src, dst); return dst
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from common import ffprobe, tool
+    dur = float(ffprobe(src)["format"]["duration"])
+    vbit = int((BROWSER_MAX * 8 * 0.92) / dur) - 160_000
+    subprocess.run([tool("ffmpeg"), "-y", "-v", "error", "-i", str(src), "-c:v", "libx264", "-preset", "slow",
+                    "-b:v", str(vbit), "-maxrate", str(int(vbit * 1.3)), "-bufsize", str(vbit * 2), "-c:a", "aac", "-b:a", "128k",
+                    "-movflags", "+faststart", str(dst)], check=True)
+    return dst
+
+
+def browser_queue():
+    """Items that need posting through the platform website (in a Claude session with Claude in Chrome)."""
+    out = []
+    for p in rows("SELECT p.id, p.clip_id, p.platform, p.error, c.meta, c.path FROM posts p JOIN clips c ON c.id=p.clip_id "
+                  "WHERE p.status IN ('manual_needed','locked_private') AND p.privacy='public' ORDER BY p.created_at"):
+        meta = json.loads(p["meta"])
+        f = next(iter(sorted(MANUAL.glob(f"*/{p['platform']}/{Path(p['path']).name}"))), None)
+        cap = (meta["youtube"]["title"] + "\n\n" + meta["youtube"]["description"]) if p["platform"] == "youtube" else meta[p["platform"]]["caption"]
+        out.append({"post_id": p["id"], "clip_id": p["clip_id"], "platform": p["platform"], "blocker": p["error"],
+                    "file": str(f) if f else None, "size_mb": round(f.stat().st_size / 1e6, 1) if f else None,
+                    "caption": cap, "public_allowed": autopilot_ok(p["platform"], config.load())})
+    return out
+
+
 def manual_package(clip, platform, blocker):
     meta = json.loads(clip["meta"])
     d = MANUAL / time.strftime("%Y-%m-%d") / platform
     d.mkdir(parents=True, exist_ok=True)
     dst = d / Path(clip["path"]).name
     if not dst.exists():
-        shutil.copy2(clip["path"], dst)
+        browser_copy(clip["path"], dst)
     txt = meta["youtube"]["title"] + "\n\n" + meta["youtube"]["description"] if platform == "youtube" else meta[platform]["caption"]
     (d / (dst.stem + ".txt")).write_text(f"BLOCKER: {blocker}\n\nPost this file manually: {dst}\n\n--- caption ---\n{txt}\n", encoding="utf-8")
 

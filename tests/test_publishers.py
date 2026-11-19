@@ -73,7 +73,7 @@ class T(unittest.TestCase):
                               "VALUES ('s','x',1,0,?,'abc',?,'approved',0)", str(VID), json.dumps(meta))
         self.clip = db.one("SELECT * FROM clips WHERE id=?", self.cid)
         self.p = [mock.patch.object(tokens, "get", side_effect=put_tokens), mock.patch.object(tokens, "app", return_value=APP),
-                  mock.patch("time.sleep")]
+                  mock.patch("time.sleep"), mock.patch.object(publish, "account_guard")]
         [x.start() for x in self.p]
 
     def tearDown(self):
@@ -123,6 +123,17 @@ class T(unittest.TestCase):
         self.assertTrue(config.stopped())
         self.assertNotIn("SECRET-ACCESS", db.one("SELECT error FROM posts")["error"])
         self.assertEqual(publish.due(), [])  # nothing publishes while stopped
+
+    def test_wrong_account_is_refused(self):
+        publish._ACCOUNT_OK.clear()
+        self.p[-1].stop()
+        try:
+            with mock.patch.object(instagram, "whoami", return_value={"account": "someone_else", "id": "1"}),                  mock.patch.object(instagram, "upload") as up:
+                s = publish.publish_clip(self.clip, "instagram", "private", config.load(), test=True)
+            self.assertEqual(s, "manual_needed"); up.assert_not_called()
+            self.assertIn("not the destination", db.one("SELECT error FROM posts")["error"])
+        finally:
+            self.p[-1].start()
 
     def test_uncleared_rights_block_publish(self):
         db.execute("UPDATE rights SET status='revoked'")

@@ -34,10 +34,14 @@ def connect(redirected_url=None):
     url = "https://www.tiktok.com/v2/auth/authorize/?" + urllib.parse.urlencode({
         "client_key": a["client_key"], "scope": SCOPES, "response_type": "code", "redirect_uri": a["redirect_uri"],
         "state": state, "code_challenge": challenge, "code_challenge_method": "S256"})
-    print("Opening TikTok authorisation in your browser. After approving, copy the FULL address you are sent to.")
-    webbrowser.open(url)
-    import getpass
-    back = redirected_url or getpass.getpass("Paste the redirected URL (hidden): ")
+    ru = urllib.parse.urlparse(a["redirect_uri"])
+    if not redirected_url and ru.hostname in ("localhost", "127.0.0.1"):
+        back = _capture_local(url, ru)  # desktop redirect: catch it on this PC, nothing to paste
+    else:
+        print("Opening TikTok authorisation in your browser. After approving, copy the FULL address you are sent to.")
+        webbrowser.open(url)
+        import getpass
+        back = redirected_url or getpass.getpass("Paste the redirected URL (hidden): ")
     q = urllib.parse.parse_qs(urllib.parse.urlparse(back).query)
     if q.get("state", [""])[0] != state:
         raise SystemExit("state mismatch: authorisation aborted")
@@ -49,6 +53,36 @@ def connect(redirected_url=None):
     r["obtained_at"] = time.time()
     tokens.put(PLAT, r)
     return whoami()
+
+
+def _capture_local(auth_url, ru, timeout=600):
+    """Serve the registered http://localhost redirect once and return the full redirected URL."""
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    got = {}
+
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path.split("?")[0].rstrip("/") == (ru.path or "/").rstrip("/"):
+                got["url"] = f"http://{ru.netloc}{self.path}"
+                body = b"TikTok connected. You can close this tab."
+            else:
+                body = b"waiting for TikTok"
+            self.send_response(200); self.send_header("Content-Type", "text/plain"); self.end_headers(); self.wfile.write(body)
+
+        def log_message(self, *a):  # keep the code out of logs
+            pass
+
+    srv = HTTPServer(("127.0.0.1", ru.port or 80), H)
+    srv.timeout = 5
+    print(f"Opening TikTok authorisation in your browser; waiting for the redirect on {ru.netloc} ...")
+    webbrowser.open(auth_url)
+    end = time.time() + timeout
+    while "url" not in got and time.time() < end:
+        srv.handle_request()
+    srv.server_close()
+    if "url" not in got:
+        raise SystemExit("timed out waiting for TikTok authorisation")
+    return got["url"]
 
 
 def _token():

@@ -82,7 +82,34 @@ The task uses your Windows login (`InteractiveToken`): it runs while this PC is 
 
 Paid VPS hosting (about $5–10 a month) is optional and won't be set up without your approval.
 
-## Brand (proposal, no impersonation)
+## Destination accounts (publishing is locked to these)
+
+| Platform | Account | Owner login |
+|---|---|---|
+| YouTube Shorts | GTA Viral Clips, @gtaviralclips6969, channel `UCpxIZcZJwslLEJDD04JSkJQ` | The channel owner's Google account (the only one to use; address kept private) |
+| Instagram Reels | @gtaviralclips69 | Instagram (personal profile today: must become Creator for the API) |
+| TikTok | @gta.viral.clips6 | TikTok |
+
+`account_guard` refuses to upload when the connected API account is not exactly this destination (`data/config.json` → `destinations`).
+The Google Cloud project is `gtaviralclips` (number 286612411476), owned by that same Google account.
+
+## Two publishing methods
+
+1. **Official APIs (primary, unattended).** The scheduler uses them: they are allowed for automation, and posts are verified through the API.
+2. **Your signed-in Chrome via Claude in Chrome (fallback, in a Claude session).** For a platform whose API can't post yet: `python -m autopilot browser-queue`, then follow `skills/browser-publish/SKILL.md`, then `python -m autopilot browser-record <post_id> <status> --url <verified URL>`. Manual packages are re-encoded to stay under the 10 MB per-file limit of the Chrome upload tool.
+   This method does not run unattended: Claude in Chrome works only while a Claude session is open, and the platforms' terms allow automated posting only through their APIs. Cookies, tokens and passwords are never read or exported.
+   Autopilot can only be enabled for a platform after a verified **API** test (browser tests don't count).
+
+Browser tests on 2026-11-19, with clip #3 (synthetic test footage):
+- **YouTube:** saved as a private Draft in Studio.
+- **TikTok:** posted as "Only me" (https://www.tiktok.com/@gta.viral.clips6/video/7709875753470545174).
+- **Instagram:** reached the Share screen, then discarded (Instagram has no private Reels); the profile still shows 0 posts.
+
+## Brand
+
+GTA Viral Clips (set in `data/config.json` → `brand`). No impersonation of Rockstar Games or any streamer.
+
+## Brand ideas from the first proposal (superseded)
 
 | | |
 |---|---|
