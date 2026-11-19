@@ -106,7 +106,8 @@ def licence_of(url):
         return None
 
 
-def process(src, creator, source_platform, display=None, max_clips=None, layouts=("react", "blur"), clip_max=None):
+def process(src, creator, source_platform, display=None, max_clips=None, layouts=("react", "blur"), clip_max=None,
+            window=None, source_key=None, source_link=None, hook=None):
     cfg = config.load()
     if clip_max:
         cfg["clip_max"] = clip_max
@@ -136,6 +137,12 @@ def process(src, creator, source_platform, display=None, max_clips=None, layouts
     words = json.loads((job / "transcript.json").read_text(encoding="utf-8"))
     info = cands.get("info", {}); src_url = info.get("webpage_url") if str(info.get("webpage_url", "")).startswith("http") else ""
     display = display or info.get("channel") or info.get("uploader") or creator
+    if source_key:
+        src_url = source_key  # stable id (e.g. twitch:<vod>@<offset>) for duplicate detection
+    if window:  # caller knows exactly where the moment is: cut that, not a guessed peak
+        w0, w1 = window
+        cands["candidates"] = [{"n": 1, "start": float(w0), "end": float(w1), "score": 1.0, "why": ["creator's top clip"],
+                                "text": " ".join(w["w"] for w in words if w0 <= w["s"] < w1)}]
     made = []
     wts = cfg.get("category_weights", {})  # learned from real views (analytics.learn)
     for cand in sorted(cands["candidates"], key=lambda c: -c["score"] * wts.get(content.classify(c["text"])[0], 1.0)):
@@ -144,7 +151,8 @@ def process(src, creator, source_platform, display=None, max_clips=None, layouts
         if one("SELECT id FROM clips WHERE source_url=? AND ABS(start-?)<5", src_url or str(src), cand["start"]):
             continue  # duplicate moment
         seed = f"{src}:{cand['start']}"
-        pkg = content.write(cand["text"], display, src_url, rr, cfg["brand"], seed, source_title=info.get("title"))
+        pkg = content.write(cand["text"], display, source_link or src_url, rr, cfg["brand"], seed,
+                            source_title=hook if hook is not None else info.get("title"))
         day = time.strftime("%Y-%m-%d")
         d = OUT / day / re.sub(r"[^\w-]+", "_", rights.norm(creator)) / pkg["category"]
         d.mkdir(parents=True, exist_ok=True)
@@ -155,6 +163,8 @@ def process(src, creator, source_platform, display=None, max_clips=None, layouts
         for lay in layouts:
             args = [SCRIPTS / "cut.py", job, "--pick", cand["n"], "--layout", lay, "--hook", pkg["hook"],
                     "--outro", pkg["outro"], "--out", mp4]
+            if window:
+                args += ["--start", cand["start"], "--end", cand["end"]]
             if lay == "react":
                 args += ["--title", pkg["hook"], "--title-secs", 3]
             if voice:
@@ -168,7 +178,7 @@ def process(src, creator, source_platform, display=None, max_clips=None, layouts
             log("render", f"layout {lay} not used for #{cand['n']}: {cout.strip().splitlines()[-1][:160] if cout.strip() else code}")
         if not done:
             continue
-        pkg.update({"source": src_url or str(src), "creator": rights.norm(creator), "start": cand["start"], "end": cand["end"],
+        pkg.update({"source": src_url or str(src), "source_link": source_link, "display": display, "creator": rights.norm(creator), "start": cand["start"], "end": cand["end"],
                     "score": cand["score"], "why": cand["why"], "voice_hook": bool(voice),
                     "caption_words": len([w for w in words if cand["start"] <= w["s"] < cand["end"]])})
         okv, checks = validate(mp4, pkg, rr, cfg)

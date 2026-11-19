@@ -171,6 +171,9 @@ def cmd_tick(a):
             yt_mark.write_text(time.strftime("%Y-%m-%d %H:%M"))
         # 2. licensed footage -> finished clips (daily limit, licence re-checked per video)
         render.produce(cfg["daily_clip_limit"])
+        # 2b. campaign-cleared Twitch creators: their top GTA VI moments -> clips -> output/ready_to_post + DAILY_REPORT.md
+        from . import batch
+        batch.run(per_creator=cfg.get("per_creator_per_cycle", 5))
         # 3. creators the owner cleared (campaigns / written permission) who are live now -> record and cut
         for d in rows("SELECT sc.platform, sc.creator, sc.url FROM scout_creators sc JOIN rights r ON r.creator=sc.creator "
                       "AND r.source_platform=sc.platform WHERE r.status='cleared' AND COALESCE(r.source_rule,'') NOT LIKE 'cc-by%' "
