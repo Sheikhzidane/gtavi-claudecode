@@ -42,9 +42,20 @@ def connect():
     if not p.exists():
         raise SystemExit(f"Missing {p}. Create a Desktop OAuth client in Google Cloud and save its JSON there.")
     flow = InstalledAppFlow.from_client_secrets_file(str(p), SCOPES)
-    c = flow.run_local_server(port=0, prompt="consent", access_type="offline", open_browser=True)
+    import os
+    show = os.environ.get("AUTOPILOT_NO_BROWSER") != "1"  # set to 1 to just print the link (open it in the right browser)
+    c = flow.run_local_server(port=8766, prompt="consent", access_type="offline", open_browser=show,
+                              authorization_prompt_message="Open this Google sign-in link: {url}",
+                              success_message="YouTube connected. You can close this tab.")
     tokens.put(PLAT, json.loads(c.to_json()))
-    return whoami()
+    me = whoami()
+    from .. import config
+    want = config.load().get("destinations", {}).get(PLAT, {}).get("channel_id")
+    if want and me.get("id") != want:  # signed in with the wrong Google account or channel: keep nothing
+        revoke()
+        raise SystemExit(f"Connected channel {me.get('account')} ({me.get('id')}) is not the destination {want}. "
+                         "Token revoked; reconnect choosing the GTA Viral Clips channel.")
+    return me
 
 
 def whoami():
