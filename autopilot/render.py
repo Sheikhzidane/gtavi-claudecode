@@ -207,6 +207,8 @@ def produce(n=3, per_creator=2):
         if not rights.is_cleared(o["creator"], "youtube")[0]:
             rights.clear(o["creator"], "youtube", "license", o["url"], "auto: CC BY licence verified on the video",
                          source_rule="cc-by-only", evidence_note="Creative Commons Attribution licence (reuse allowed) on the source video")
+        if not cfg.get("youtube_downloads", True):
+            break  # owner turned YouTube downloads off: no automatic retries
         if youtube_blocked():
             log("render", "YouTube downloads paused after a bot check; resuming automatically later"); break
         ids = process(o["url"], o["creator"], "youtube", display=o["display"], max_clips=1)
