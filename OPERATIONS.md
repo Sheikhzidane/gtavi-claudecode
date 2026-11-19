@@ -93,6 +93,13 @@ Paid VPS hosting (about $5–10 a month) is optional and won't be set up without
 `account_guard` refuses to upload when the connected API account is not exactly this destination (`data/config.json` → `destinations`).
 The Google Cloud project is `gtaviralclips` (number 286612411476), owned by that same Google account.
 
+Public app pages (GitHub Pages, from `/docs` on `feature/gtaviralclips-publishing`), used by the TikTok and Meta developer apps:
+- Terms of Service: https://sheikhzidane.github.io/gtavi-claudecode/TERMS.html
+- Privacy Policy: https://sheikhzidane.github.io/gtavi-claudecode/PRIVACY.html
+- App site: https://sheikhzidane.github.io/gtavi-claudecode/
+
+If this branch is merged or renamed, switch the Pages source (repo Settings → Pages), or these links go down.
+
 ## Two publishing methods
 
 1. **Official APIs (primary, unattended).** The scheduler uses them: they are allowed for automation, and posts are verified through the API.
