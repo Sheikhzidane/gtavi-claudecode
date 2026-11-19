@@ -6,3 +6,9 @@ test/
 *.wav
 *.ts
 !docs/*.mp4
+data/
+output/
+reports/
+input/
+ops_out/
+*.mp3

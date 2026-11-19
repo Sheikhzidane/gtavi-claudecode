@@ -51,7 +51,7 @@ def wrap(text, width):
     return lines + ([cur] if cur else [])
 
 
-def build_ass(words, s0, e0, hook, cap_y, title=None, caps='word', profanity=False):
+def build_ass(words, s0, e0, hook, cap_y, title=None, caps='word', profanity=False, outro=''):
     hdr = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {W}
@@ -109,6 +109,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         else:
             ev.append(f"Dialogue: 2,{ts(0)},{ts(end)},TitleOut,,0,0,0,,{{\\pos({W // 2},{ty})\\an8}}{body}")
         hook = ''
+    if outro:  # editorial line over the last seconds (original commentary)
+        d = e0 - s0
+        ev.append(f"Dialogue: 1,{ts(max(0, d - 3.2))},{ts(d)},Hook,,0,0,0,,{{\\fad(200,0)}}{esc(outro)}")
     if hook:
         ev.append(f"Dialogue: 1,{ts(0)},{ts(hook_end)},Hook,,0,0,0,,{{\\fad(0,180)\\fscx92\\fscy92\\t(0,120,\\fscx100\\fscy100)}}{esc(hook)}")
     return hdr + "\n".join(ev) + "\n"
@@ -205,6 +208,9 @@ def main():
     ap.add_argument("--title-secs", type=float, default=0, help="0 = whole clip")
     ap.add_argument("--captions", choices=["word", "bubble", "none"], default="word")
     ap.add_argument("--hook", default="")
+    ap.add_argument("--outro", default="", help="editorial line shown over the last 3 s")
+    ap.add_argument("--voice", default="", help="audio file (voiced hook) mixed over the start, game audio ducked")
+    ap.add_argument("--out", default="", help="output mp4 path (default jobs/<id>/edits/clip_<n>.mp4)")
     ap.add_argument("--allow-profanity", action="store_true", help="keep swear words in captions (slurs are always masked)")
     ap.add_argument("--cam", default="auto", help="auto (find the webcam) or x:y:w:h fractions")
     ap.add_argument("--start", type=float); ap.add_argument("--end", type=float)
@@ -264,7 +270,7 @@ def main():
     ass = out / f"clip_{a.pick}.ass"
     caps = a.captions
     cap_words = words if caps != 'none' else []
-    ass.write_text(build_ass(cap_words, s0, e0, a.hook, cap_y, title=title, caps=caps, profanity=a.allow_profanity), encoding="utf-8")
+    ass.write_text(build_ass(cap_words, s0, e0, a.hook, cap_y, title=title, caps=caps, profanity=a.allow_profanity, outro=a.outro), encoding="utf-8")
     src = None; gx = None
     if layout == 'react':
         from common import ffprobe
@@ -272,13 +278,25 @@ def main():
         src = (int(vs['width']), int(vs['height']))
         gx = game_offset(c['source'], s0, e0, src, [float(t) for t in cam.split(':')])
     v = video_filter(layout, cam, ass, band=band, cam_side=side, src=src, game_x=gx, face_expr=face_expr)
-    mp4 = out / f"clip_{a.pick}.mp4"
-    run([tool("ffmpeg"), "-y", "-v", "error", "-ss", f"{s0:.2f}", "-to", f"{e0:.2f}", "-i", c["source"],
-         "-filter_complex", v, "-map", "[vo]", "-map", "0:a?", "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
+    mp4 = Path(a.out) if a.out else out / f"clip_{a.pick}.mp4"
+    mp4.parent.mkdir(parents=True, exist_ok=True)
+    norm = "loudnorm=I=-14:TP=-1.5:LRA=11"
+    inputs = ["-ss", f"{s0:.2f}", "-to", f"{e0:.2f}", "-i", c["source"]]
+    if a.voice:
+        from common import ffprobe as _fp
+        vd = float(_fp(a.voice)["format"]["duration"])
+        inputs += ["-i", a.voice]
+        v += (f";[0:a]volume='if(lt(t,{vd + 0.2:.2f}),0.3,1)':eval=frame[ga];[1:a]volume=1.8[va];"
+              f"[ga][va]amix=inputs=2:duration=first:normalize=0,{norm}[ao]")
+        amap = ["-map", "[ao]"]
+    else:
+        amap = ["-map", "0:a?", "-af", norm]
+    run([tool("ffmpeg"), "-y", "-v", "error", *inputs,
+         "-filter_complex", v, "-map", "[vo]", *amap,
          "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k",
          "-ar", "48000", "-movflags", "+faststart", str(mp4)])
     info = c.get("info", {})
-    save_json(out / f"clip_{a.pick}.json", {"file": str(mp4), "start": s0, "end": e0, "layout": layout, "hook": a.hook or a.title, "title": a.title, "cam": cam,
+    save_json(mp4.with_suffix(".json"), {"file": str(mp4), "start": s0, "end": e0, "layout": layout, "hook": a.hook or a.title, "title": a.title, "outro": a.outro, "voice": bool(a.voice), "cam": cam,
                                             "source_url": info.get("webpage_url"), "source_title": info.get("title"),
                                             "source_channel": info.get("channel") or info.get("uploader")})
     print(mp4)

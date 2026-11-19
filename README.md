@@ -70,7 +70,7 @@ No income is promised. Your result depends on speed, picks and hooks, and the sc
 | `playbook` | Your full daily routine and launch-day plan |
 | `learning-loop` | Scoreboard, one test per day, payouts from real numbers only |
 
-Nothing is uploaded automatically. You approve every post.
+Nothing is uploaded automatically by default. The optional `autopilot` package (see [OPERATIONS.md](OPERATIONS.md)) adds a rights database, an hourly scheduler, official YouTube / TikTok / Instagram API publishing, review mode, an opt-in autopilot mode and an emergency stop.
 
 ## Hard rules
 

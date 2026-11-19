@@ -115,6 +115,7 @@ def main():
     ap.add_argument("src"); ap.add_argument("--top", type=int, default=8)
     ap.add_argument("--min", type=float, default=15); ap.add_argument("--max", type=float, default=40)
     ap.add_argument("--chat"); ap.add_argument("--max-minutes", type=int, default=90)
+    ap.add_argument("--fresh", action="store_true", help="accepted for pipeline calls; candidates are always recomputed")
     a = ap.parse_args()
     d = job_dir(a.src)
     vid, info = fetch(a.src, d, a.max_minutes)

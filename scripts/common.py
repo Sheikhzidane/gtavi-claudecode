@@ -5,9 +5,24 @@ from pathlib import Path
 ROOT = Path(os.environ.get("CLIP_DESK_HOME", Path.cwd()))
 JOBS = ROOT / "jobs"
 
+# Windows consoles default to cp1252 and crash on emoji in stream titles.
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+
+def _winget_tool(name):
+    """winget installs FFmpeg under Packages\\Gyan.FFmpeg*\\...\\bin without always adding a PATH link."""
+    base = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages"
+    for exe in sorted(base.glob(f"Gyan.FFmpeg*/*/bin/{name}.exe"), reverse=True):
+        return str(exe)
+    return None
+
 
 def tool(name):
-    p = shutil.which(name)
+    p = shutil.which(name) or (sys.platform == "win32" and _winget_tool(name)) or None
     if not p:
         sys.exit(f"{name} not found. Run the setup skill first (it installs ffmpeg and yt-dlp).")
     return p
